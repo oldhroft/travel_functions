@@ -79,59 +79,105 @@ from typing import List
 def update_dicts(dicts: List[dict], **kwargs) -> List[dict]:
     return list(map(lambda x: {**x, **kwargs}, dicts))
 
-def get_cards_travelata(soup: BeautifulSoup) -> List[dict]:
-    return soup.find_all("div", class_="serpHotelCard")
+def get_cards(soup: BeautifulSoup) -> List[dict]:
+    return soup.find_all(
+        "div", class_="hotel_point"
+    )
 
-@parse_func_wrapper("https://travelata.ru/")
-def parse_hotel_card_travelata(card: BeautifulSoup) -> dict:
-    title, href = get_text(card, "a", "serpHotelCard__title", attrs=["href"])
-    location = get_text(card, "a", class_="serpHotelCard__resort")
+@parse_func_wrapper("https://tourist.tez-tour.com/")
+def parse_card(card: BeautifulSoup) -> dict:
 
-    distances_card = card.find("div", class_="serpHotelCard__distances")
-    if distances_card is not None:
-        distances = list(
-            map(
-                lambda x: x.get_text(" ", strip=True),
-                distances_card.find_all("div", class_="serpHotelCard__distance"),
-            )
+    _, href = get_text(card, "a", class_="fav-detailurl", attrs=["href"])
+    
+    _, preview_img = get_text(card, "img", class_="preview", attrs=["src"])
+
+    try:
+        (
+            location_name, hotel_id, hotel_rating, 
+            hotel_rating_text, latitude, longitude, title
+        ) = get_text(
+            card, "div", class_="city-name",
+            attrs=[
+                "data-hotel-id", "data-hotel-rating", "data-hotel-rating-text",
+                "data-lat", "data-lng", "data-title",
+            ]
         )
-    else:
-        distances = []
-
-    distances_str = ';'.join(distances)
-
-    rating = get_text(card, "div", "serpHotelCard__rating")
-    reviews = get_text(card, "a", "hotel-reviews", raise_error=False)
-    less_places = get_text(
-        card, "div", "serpHotelCard__tip__less-places", raise_error=False
+    except:
+        location_name = get_text(card, "div", class_="city-name")
+        hotel_id = None
+        hotel_rating = None
+        hotel_rating_text = None
+        latitude = None
+        longitude = None
+        title = None
+    
+    _, hint_text = get_text(
+        card, "div", class_="clipped-text", attrs=["data-title"],
+        raise_error=False
     )
-    num_stars = len(card.find_all("i", "icon-i16_star"))
 
-    orders_count = get_text(
-        card, "div", "serpHotelCard__ordersCount", raise_error=False
+    amenities = card.find_all(
+        "h6", class_="hotel-amenities-item"
     )
-    criteria = get_text(card, "div", "serpHotelCard__criteria")
-    price = get_text(card, "span", "serpHotelCard__btn-price")
-    oil_tax = get_text(card, "span", "serpHotelCard__btn-oilTax")
 
-    attributes_cards = card.find_all("div", class_="serpHotelCard__attribute")
-    attributes = list(map(lambda x: x.get_text(" ", strip=True), attributes_cards))
+    amenities_list = ";".join(list(map(
+        lambda x: x.get_text(" ", strip=True),
+        amenities
+    )))
+
+    departure_info = (
+        card.find("div", class_="inline-visible")
+        .find("div", class_="type")
+        .get_text(" ", strip=True))
+
+    mealplan = get_text(
+        card, "div", class_="fav-mealplan"
+    )
+
+    room_type = get_text(
+        card, "div", class_="fav-room"
+    )
+    _, currency, price = get_text(
+        card, "a", class_="price-box", attrs=["data-currency", "data-price", ]
+    )
+
+    price_box = get_text(
+        card, "div", class_="price-box-hint",
+    )
+
+    price_include = get_text(
+        card, "ul", class_="price-include",
+    )
+
+    _, stars_class_list = get_text(card, "div", "hotel-star-box", attrs=["class"])
+
+    stars_class = ";".join(stars_class_list)
+
+    till_info = card.find_all("div", class_="type")[2].get_text(" ", strip=True)
 
     return {
-        "title": title,
         "href": href,
-        "location": location,
-        "distances": distances_str,
-        "rating": rating,
-        "reviews": reviews,
-        "less_places": less_places,
-        "num_stars": num_stars,
-        "orders_count": orders_count,
-        "criteria": criteria,
+        "preview_img": preview_img,
+        "location_name": location_name,
+        "hotel_id": hotel_id,
+        "hotel_rating": hotel_rating,
+        "hotel_rating_text": hotel_rating_text,
+        "latitude": latitude,
+        "longitude": longitude,
+        "title": title,
+        "hint_text": hint_text,
+        "amenities_list": amenities_list,
+        "departure_info": departure_info,
+        "mealplan": mealplan,
+        "room_type": room_type,
+        "currency": currency,
         "price": price,
-        "oil_tax": oil_tax,
-        "attributes": attributes,
+        "price_box": price_box,
+        "price_include": price_include,
+        "till_info": till_info,
+        "stars_class": stars_class
     }
+
 
 def load_process_html_cards_from_s3(
     client, Bucket: str, Key: str,
@@ -166,17 +212,27 @@ def load_process_html_cards_from_s3(
         return None
 
 def format_record(record: list):
-    return '''("{}","{}","{}","{}","{}","{}","{}","{}","{}","{}","{}",
-    "{}","{}",cast("{}" as datetime),"{}","{}","{}","{}","{}","{}","{}")'''.format(*record.values())
+    template = (
+        '("{href}","{preview_img}","{location_name}",'
+        '"{hotel_id}","{hotel_rating}","{hotel_rating_text}",'
+        '"{latitude}","{longitude}","{title}","{hint_text}",'
+        '"{amenities_list}","{departure_info}","{mealplan}",'
+        '"{room_type}","{currency}","{price}","{price_box}",'
+        '"{price_include}","{till_info}","{stars_class}",'
+        'cast("{created_dttm}" as datetime), "{website}",'
+        '"{link}", "{offer_hash}", "{row_id}", "{parsing_id}",'
+        '"{key}", "{bucket}")'
+    )
+    return template.format(**record)
 
 def create_statement(data: list) -> str:
     query = """
-    REPLACE INTO `parser/travelata_raw`(
-        title, href, location, distances, 
-        rating, reviews, less_places, 
-        num_stars, orders_count, criteria,
-        price, oil_tax, attributes, created_dttm,
-        website, link, offer_hash, row_id, parsing_id, 
+    REPLACE INTO `parser/teztour_raw`(
+        href, preview_img, location_name, hotel_id, hotel_rating,
+        hotel_rating_text,latitude,longitude,title,hint_text,
+        amenities_list,departure_info,mealplan,room_type,currency,
+        price,price_box,price_include,till_info,stars_class,
+        created_dttm, website, link, offer_hash, row_id, parsing_id, 
         key, bucket)
     VALUES
     {}
@@ -208,18 +264,18 @@ def create_execute_query(query):
 def process_file(Bucket, Key):
     result = load_process_html_cards_from_s3(
         s3, Bucket, Key, 
-        get_cards_travelata, parse_hotel_card_travelata
+        get_cards, parse_card
     )
 
     if result is None:
         return 0
 
-    queries = create_queries(result, max_records=5)
+    queries = create_queries(result, max_records=3)
     for query in queries:
         try:
             pool.retry_operation_sync(create_execute_query(query))
-        except:
-            raise ValueError(f"Failed at query {query}")
+        except Exception as e:
+            raise ValueError(f"Failed with exception {e} at query {query}")
         
     return len(result)
     

@@ -38,7 +38,7 @@ yc serverless function version create \
   --runtime python39 \
   --entrypoint index.handler \
   --memory 256m \
-  --execution-timeout 60s \
+  --execution-timeout 120s \
   --package-bucket-name parsing \
   --package-object-name functions/$1.zip \
   --service-account-id $SERVICE_ACCOUNT_ID \

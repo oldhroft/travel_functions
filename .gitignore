@@ -3,3 +3,4 @@ triggers
 *.json
 *.txt
 secrets.sh
+!messages

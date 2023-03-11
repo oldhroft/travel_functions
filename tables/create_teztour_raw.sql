@@ -1,0 +1,33 @@
+DROP TABLE `parser/teztour_raw`;
+
+CREATE TABLE `parser/teztour_raw` (
+    href Utf8,
+    preview_img Utf8,
+    location_name Utf8,
+    hotel_id Utf8,
+    hotel_rating Utf8,
+    hotel_rating_text Utf8,
+    latitude Utf8,
+    longitude Utf8,
+    title Utf8,
+    hint_text Utf8,
+    amenities_list Utf8,
+    departure_info Utf8,
+    mealplan Utf8,
+    room_type Utf8,
+    currency Utf8,
+    price Utf8,
+    price_box Utf8,
+    price_include Utf8,
+    till_info Utf8,
+    stars_class Utf8,
+    created_dttm Datetime,
+    website Utf8,
+    link Utf8,
+    offer_hash Utf8,
+    row_id Utf8,
+    parsing_id Utf8,
+    key Utf8,
+    bucket Utf8,
+    PRIMARY KEY (created_dttm, parsing_id, row_id) 
+);
