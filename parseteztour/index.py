@@ -227,7 +227,7 @@ def format_record(record: list):
 
 def create_statement(data: list) -> str:
     query = """
-    REPLACE INTO `parser/teztour_raw`(
+    REPLACE INTO `parser/raw/teztour` (
         href, preview_img, location_name, hotel_id, hotel_rating,
         hotel_rating_text,latitude,longitude,title,hint_text,
         amenities_list,departure_info,mealplan,room_type,currency,

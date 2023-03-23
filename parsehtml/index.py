@@ -115,7 +115,7 @@ def parse_hotel_card_travelata(card: BeautifulSoup) -> dict:
     oil_tax = get_text(card, "span", "serpHotelCard__btn-oilTax")
 
     attributes_cards = card.find_all("div", class_="serpHotelCard__attribute")
-    attributes = list(map(lambda x: x.get_text(" ", strip=True), attributes_cards))
+    attributes = ";".join(map(lambda x: x.get_text(" ", strip=True), attributes_cards))
 
     return {
         "title": title,
@@ -171,7 +171,7 @@ def format_record(record: list):
 
 def create_statement(data: list) -> str:
     query = """
-    REPLACE INTO `parser/travelata_raw`(
+    REPLACE INTO `parser/raw/travelata`(
         title, href, location, distances, 
         rating, reviews, less_places, 
         num_stars, orders_count, criteria,

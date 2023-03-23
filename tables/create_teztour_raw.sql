@@ -1,6 +1,4 @@
-DROP TABLE `parser/teztour_raw`;
-
-CREATE TABLE `parser/teztour_raw` (
+CREATE TABLE `parser/raw/teztour` (
     href Utf8,
     preview_img Utf8,
     location_name Utf8,
@@ -30,4 +28,6 @@ CREATE TABLE `parser/teztour_raw` (
     key Utf8,
     bucket Utf8,
     PRIMARY KEY (created_dttm, parsing_id, row_id) 
+) WITH (
+    TTL = Interval("PT120H") ON created_dttm
 );

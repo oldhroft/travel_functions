@@ -1,6 +1,4 @@
-DROP TABLE `parser/travelata_raw`;
-
-CREATE TABLE `parser/travelata_raw` (
+CREATE TABLE `parser/raw/travelata` (
     title Utf8,
     href Utf8,
     location Utf8,
@@ -23,4 +21,6 @@ CREATE TABLE `parser/travelata_raw` (
     key Utf8,
     bucket Utf8,
     PRIMARY KEY (created_dttm, parsing_id, row_id) 
+) WITH (
+    TTL = Interval("PT120H") ON created_dttm
 );
