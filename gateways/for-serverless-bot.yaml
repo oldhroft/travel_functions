@@ -1,0 +1,19 @@
+openapi: "3.0.0"
+info:
+  version: 1.0.0
+  title: Test API
+servers:
+- url: https://d5dlol8krjrn3hjjtm6k.apigw.yandexcloud.net
+paths:
+  /fshtb-function:
+      post:
+        x-yc-apigateway-integration:
+          type: cloud_functions
+          function_id: d4ejfq4n3vjq5e0arq7e
+        operationId: fshtb-function
+  /add-user-event:
+      post:
+        x-yc-apigateway-integration:
+          type: cloud_functions
+          function_id: d4emoumsedkeluntk56p
+        operationId: add-user-event

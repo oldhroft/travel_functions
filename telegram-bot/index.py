@@ -11,13 +11,18 @@ from telegram.ext.commandhandler import CommandHandler
 
 import datetime
 import ydb
+import ydb.iam
+
+import requests
 
 def serial_date_to_string(srl_no):
     new_date = datetime.datetime(1970, 1, 1, 0, 0) + datetime.timedelta(srl_no - 1)
     return new_date.strftime("%d.%m.%Y")
 
 def initialize_session():
-    driver = ydb.Driver(endpoint=os.getenv('YDB_ENDPOINT'), database=os.getenv('YDB_DATABASE'))
+    driver = ydb.Driver(
+        endpoint=os.getenv('YDB_ENDPOINT'), database=os.getenv('YDB_DATABASE'),
+        credentials=ydb.iam.MetadataUrlCredentials(),)
     
     try:
         driver.wait(fail_fast=True, timeout=5)
@@ -28,6 +33,10 @@ def initialize_session():
         print("Last reported errors by discovery:")
         print(driver.discovery_debug_details())
         exit(1)
+
+def post_user_event(event):
+    url = os.getenv("ADD_USER_HANDLER")
+    requests.post(url, json=event)
 
 help_string = """Вот что я могу:
 /search - Найти туры
@@ -40,6 +49,10 @@ FROM `parser/prod/offers`
 WHERE num_stars > 3
 ORDER BY price / num_nights ASC
 LIMIT 1;
+"""
+
+hello_string = """Привет!👋\nЯ помогу подобрать удобные туры!
+Используй /search чтобы подобрать тур!
 """
 
 def load_to_s3(data: Union[str, dict, list], Key, Bucket, is_json=False):
@@ -74,6 +87,10 @@ def help_(update: Update, context: CallbackContext) -> int:
     update.message.reply_text(help_string)
 
 def search(update: Update, context: CallbackContext) -> int:
+    update.message.reply_text(
+        "Секундочку, подбираю для тебя варианты"
+    )
+    post_user_event(update.to_dict())
     session = initialize_session()
     result = session.transaction().execute(query, commit_tx=True)[0].rows[0]
     line1 = f"На {int(result.num_nights)} ночей, с {serial_date_to_string(result.start_date)} до {serial_date_to_string(result.end_date)}\n"
@@ -94,7 +111,6 @@ def handler(event, context):
         Update.de_json(json.loads(event["body"]), bot)
     )
     
-    load_to_s3(json.dumps(message), "message.json", "parsing", is_json=True)
 
     return {
         'statusCode': 200,
