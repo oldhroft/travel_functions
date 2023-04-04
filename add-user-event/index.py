@@ -3,15 +3,8 @@ import os
 import json
 from typing import Union
 
-
-import datetime
 import ydb
 import ydb.iam
-
-
-def serial_date_to_string(srl_no):
-    new_date = datetime.datetime(1970, 1, 1, 0, 0) + datetime.timedelta(srl_no - 1)
-    return new_date.strftime("%d.%m.%Y")
 
 
 def initialize_session():
@@ -78,14 +71,6 @@ def handler(event, context):
 
     session = initialize_session()
     table_path = "users/users"
-
-    column_order = [
-        "id",
-        "is_bot",
-        "first_name",
-        "last_name",
-        "username",
-    ]
 
     def nvl(val):
         return "NULL" if val is None else f'"{val}"'

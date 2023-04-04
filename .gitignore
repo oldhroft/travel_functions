@@ -4,3 +4,4 @@ triggers
 *.txt
 secrets.sh
 !messages
+!requirements.txt

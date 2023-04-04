@@ -4,10 +4,11 @@ import json
 from typing import Union
 
 import telegram.ext
-from telegram.ext import Dispatcher, MessageHandler, Filters
-from telegram import Update, Bot
+from telegram.ext import Dispatcher
+from telegram import Update, Bot, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext.callbackcontext import CallbackContext
 from telegram.ext.commandhandler import CommandHandler
+from telegram.ext import CallbackQueryHandler
 
 import datetime
 import ydb
@@ -44,15 +45,26 @@ help_string = """Вот что я могу:
 /help - Вывести список доступных команд
 """
 
-query = """SELECT *
+query_template = """$format = DateTime::Format("%d.%m.%Y");
+
+SELECT cast($format(start_date) as utf8) as start_date, 
+    cast($format(end_date) as utf8) as end_date,
+    title,
+    country_name,
+    num_nights,
+    city_name,
+    price,
+    link,
+    num_stars
 FROM `parser/prod/offers`
-WHERE num_stars > 3
+WHERE {where_query}
 ORDER BY price / num_nights ASC
 LIMIT 1;
 """
 
-hello_string = """Привет!👋\nЯ помогу подобрать удобные туры!
-Используй /search чтобы подобрать тур!
+hello_string = """Привет!👋
+Я помогу подобрать удобные туры
+Используй /search чтобы подобрать тур
 """
 
 def load_to_s3(data: Union[str, dict, list], Key, Bucket, is_json=False):
@@ -79,38 +91,110 @@ def load_to_s3(data: Union[str, dict, list], Key, Bucket, is_json=False):
     s3.put_object(Body=data, Bucket=Bucket, Key=Key)
 
 def start(update: Update, context: CallbackContext) -> int:
-    update.message.reply_text(
-        "Привет!👋\nЯ помогу подобрать удобные туры!"
-    )
+    update.message.reply_text(hello_string)
 
 def help_(update: Update, context: CallbackContext) -> int:
     update.message.reply_text(help_string)
 
+
+countries_dict = {
+    0: "ОАЭ",
+    1: "Таиланд",
+    2: "Египет",
+    3: None
+}
+
+countries_dict_tg = {
+    0: "ОАЭ🇦🇪",
+    1: "Таиланд🇹🇭",
+    2: "Египет🇪🇬",
+    3: "Любая"
+}
+
+STAR = "⭐"
+
 def search(update: Update, context: CallbackContext) -> int:
+
+    keyboard_list = []
+    for i, country in countries_dict_tg.items():
+        entry = json.dumps({"val": i , "id": 1})
+        keyboard_list.append(
+            InlineKeyboardButton(country, callback_data=entry))
+
+    reply_markup = InlineKeyboardMarkup([keyboard_list])
+
     update.message.reply_text(
-        "Секундочку, подбираю для тебя варианты"
+        "Выбери страну",
+        reply_markup=reply_markup
     )
     post_user_event(update.to_dict())
+
+def query_offer(params: dict) -> str:
+    country = params["country"]
+    if country is None:
+        query_country = "1=1"
+    else:
+        query_country = f"String::Strip(country_name) = '{country}'"
+    
+    where_query = query_country
+    query = query_template.format(where_query=where_query)
     session = initialize_session()
-    result = session.transaction().execute(query, commit_tx=True)[0].rows[0]
-    line1 = f"На {int(result.num_nights)} ночей, с {serial_date_to_string(result.start_date)} до {serial_date_to_string(result.end_date)}\n"
-    line2 = f"{result.country_name}, {result.city_name}\n"
-    line3 = f"Стоимость {result.price} RUB\n"
-    text = line1 + line2 + line3 + result.link
-    update.message.reply_text(text)
+    result = session.transaction().execute(query, commit_tx=True)[0].rows
+    if len(result) == 0:
+        return "Ничего не найдено"
+    
+    result = result[0]
+    line0 = f"{result.title}\n"
+    line1 = f"Рейтинг {int(result.num_stars) * STAR}\n"
+
+    line2 = f"На {int(result.num_nights)} ночей, с {result.start_date} до {result.end_date}\n"
+    line3 = f"{result.country_name}, {result.city_name}\n"
+    line4 = f"Стоимость {result.price} RUB\n"
+    text = line0 + line1 + line2 + line3 + line4 + result.link
+    return text
+
+
+def button(update: Update, context: CallbackContext) -> None:
+    """Parses the CallbackQuery and updates the message text."""
+    query = update.callback_query
+
+    # CallbackQueries need to be answered, even if no notification to the user is needed
+    # Some clients may have trouble otherwise. See https://core.telegram.org/bots/api#callbackquery
+    query.answer()
+
+    data = json.loads(query.data)
+
+    if data["id"] == 1:
+        # Previous selection was selection of country
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text= "Отлично👌🏻\nПодожди, пока я подберу варианты")
+        
+        query.edit_message_text(text=countries_dict_tg.get(data["val"]))
+
+        params = {
+            "country": countries_dict.get(data["val"])
+        }
+
+        text = query_offer(params)
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=text)
+
 
 def handler(event, context):
     bot = Bot(os.environ["BOT_TOKEN"])
     dispatcher = Dispatcher(bot, None, use_context=True)
     dispatcher.add_handler(CommandHandler("start", start))
     dispatcher.add_handler(CommandHandler("help", help_))
+    dispatcher.add_handler(CallbackQueryHandler(button))
     dispatcher.add_handler(CommandHandler("search", search))
 
     message = json.loads(event["body"])
+    load_to_s3(message, "message0.json", "parsing", is_json=True)
     dispatcher.process_update(
         Update.de_json(json.loads(event["body"]), bot)
     )
-    
 
     return {
         'statusCode': 200,

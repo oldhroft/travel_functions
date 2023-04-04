@@ -1,0 +1,4 @@
+boto3
+bs4
+six
+ydb
