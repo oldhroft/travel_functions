@@ -1,6 +1,7 @@
 import boto3
 import os
 import json
+import datetime
 from typing import Union
 
 import ydb
@@ -60,7 +61,7 @@ def handler(event, context):
 
     message = json.loads(event["body"])
 
-    from_user =  message["message"]["from"]
+    from_user =  message["user"]
     
     load_to_s3(json.dumps(message), "message.json", "parsing", is_json=True)
 
@@ -73,7 +74,7 @@ def handler(event, context):
     table_path = "users/users"
 
     def nvl(val):
-        return "NULL" if val is None else f'"{val}"'
+        return "NULL" if val is None else json.dumps(val)
 
     row = f'({from_user["id"]},cast({from_user["is_bot"]} as bool),'\
         f'{nvl(from_user["first_name"])},'\
@@ -82,6 +83,23 @@ def handler(event, context):
     
     query = f"REPLACE INTO `{table_path}`("\
         "user_id, is_bot, first_name, last_name, username) VALUES" \
+        f"{row}"
+
+    session.retry_operation_sync(create_execute_query(query))
+
+    table_path = "users/events"
+
+    if message["clear"]:
+        query = f"DELETE FROM `{table_path}` WHERE user_id = {from_user['id']}"
+        session.retry_operation_sync(create_execute_query(query))
+    
+    param = message["param"] if "param" in message else None
+    time_fmt = "%Y-%m-%dT%H:%M:%SZ"
+    dttm = datetime.datetime.now().strftime(time_fmt)
+    row = f'({from_user["id"]},{nvl(param)},{nvl(message["event"])},cast("{dttm}" as datetime))'
+
+    query = f"REPLACE INTO `{table_path}`("\
+        "user_id, param, event, created_dttm) VALUES" \
         f"{row}"
 
     session.retry_operation_sync(create_execute_query(query))

@@ -59,7 +59,7 @@ SELECT cast($format(start_date) as utf8) as start_date,
 FROM `parser/prod/offers`
 WHERE {where_query}
 ORDER BY price / num_nights ASC
-LIMIT 1;
+LIMIT 4;
 """
 
 hello_string = """Привет!👋
@@ -123,11 +123,30 @@ def search(update: Update, context: CallbackContext) -> int:
 
     reply_markup = InlineKeyboardMarkup([keyboard_list])
 
+    user_event = {
+        "user": update.to_dict()["message"]["from"],
+        "event": "search",
+        "clear": True
+    }
+
+    post_user_event(user_event)
+
     update.message.reply_text(
         "Выбери страну",
         reply_markup=reply_markup
     )
-    post_user_event(update.to_dict())
+
+
+def format_result(result):
+    line0 = f"{result.title}\n"
+    line1 = f"Рейтинг {int(result.num_stars) * STAR}\n"
+
+    line2 = f"На {int(result.num_nights)} ночей, с {result.start_date} до {result.end_date}\n"
+    line3 = f"{result.country_name}, {result.city_name}\n"
+    line4 = f"Стоимость {result.price} RUB\n"
+    text = line0 + line1 + line2 + line3 + line4 + result.link
+    return text
+
 
 def query_offer(params: dict) -> str:
     country = params["country"]
@@ -139,19 +158,11 @@ def query_offer(params: dict) -> str:
     where_query = query_country
     query = query_template.format(where_query=where_query)
     session = initialize_session()
-    result = session.transaction().execute(query, commit_tx=True)[0].rows
-    if len(result) == 0:
+    results = session.transaction().execute(query, commit_tx=True)[0].rows
+    if len(results) == 0:
         return "Ничего не найдено"
     
-    result = result[0]
-    line0 = f"{result.title}\n"
-    line1 = f"Рейтинг {int(result.num_stars) * STAR}\n"
-
-    line2 = f"На {int(result.num_nights)} ночей, с {result.start_date} до {result.end_date}\n"
-    line3 = f"{result.country_name}, {result.city_name}\n"
-    line4 = f"Стоимость {result.price} RUB\n"
-    text = line0 + line1 + line2 + line3 + line4 + result.link
-    return text
+    return list(map(format_result, results))
 
 
 def button(update: Update, context: CallbackContext) -> None:
@@ -176,10 +187,22 @@ def button(update: Update, context: CallbackContext) -> None:
             "country": countries_dict.get(data["val"])
         }
 
-        text = query_offer(params)
-        context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=text)
+        user = update.to_dict()["callback_query"]["from"]
+
+        user_event = {
+            "user": user,
+            "event": "select_param",
+            "clear": False,
+            "param": json.dumps(json.dumps(params))
+        }
+
+        post_user_event(user_event)
+
+        texts = query_offer(params)
+        for text in texts:
+            context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=text)
 
 
 def handler(event, context):
