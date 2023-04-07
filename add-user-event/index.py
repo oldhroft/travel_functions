@@ -98,11 +98,18 @@ def handler(event, context):
     dttm = datetime.datetime.now().strftime(time_fmt)
     row = f'({from_user["id"]},{nvl(param)},{nvl(message["event"])},cast("{dttm}" as datetime))'
 
-    query = f"REPLACE INTO `{table_path}`("\
+    query_template = "REPLACE INTO `{table_path}`("\
         "user_id, param, event, created_dttm) VALUES" \
-        f"{row}"
+        "{row}"
 
-    session.retry_operation_sync(create_execute_query(query))
+    session.retry_operation_sync(
+        create_execute_query(query_template.format(
+            table_path=table_path, row=row)))
+
+    table_path = "users/events_log"
+    session.retry_operation_sync(
+        create_execute_query(
+            query_template.format(table_path=table_path, row=row)))
     
     return {
         'statusCode': 200,

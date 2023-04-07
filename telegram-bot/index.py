@@ -10,15 +10,15 @@ from telegram.ext.callbackcontext import CallbackContext
 from telegram.ext.commandhandler import CommandHandler
 from telegram.ext import CallbackQueryHandler
 
-import datetime
 import ydb
 import ydb.iam
 
 import requests
 
-def serial_date_to_string(srl_no):
-    new_date = datetime.datetime(1970, 1, 1, 0, 0) + datetime.timedelta(srl_no - 1)
-    return new_date.strftime("%d.%m.%Y")
+import logging
+
+logging.getLogger().setLevel(logging.INFO)
+
 
 def initialize_session():
     driver = ydb.Driver(
@@ -62,6 +62,12 @@ ORDER BY price / num_nights ASC
 LIMIT 4;
 """
 
+query_params_template = """select param
+from `users/events`
+where user_id = {user_id}
+    and event = 'select_param'"""
+
+
 hello_string = """Привет!👋
 Я помогу подобрать удобные туры
 Используй /search чтобы подобрать тур
@@ -91,9 +97,11 @@ def load_to_s3(data: Union[str, dict, list], Key, Bucket, is_json=False):
     s3.put_object(Body=data, Bucket=Bucket, Key=Key)
 
 def start(update: Update, context: CallbackContext) -> int:
+    logging.info("Start event", extra={"context": {"SEVERITY": "info"}})
     update.message.reply_text(hello_string)
 
 def help_(update: Update, context: CallbackContext) -> int:
+    logging.info("Help event", extra={"context": {"SEVERITY": "info"}})
     update.message.reply_text(help_string)
 
 
@@ -115,6 +123,7 @@ STAR = "⭐"
 
 def search(update: Update, context: CallbackContext) -> int:
 
+    logging.info("Search event", extra={"context": {"SEVERITY": "info"}})
     keyboard_list = []
     for i, country in countries_dict_tg.items():
         entry = json.dumps({"val": i , "id": 1})
@@ -130,11 +139,26 @@ def search(update: Update, context: CallbackContext) -> int:
     }
 
     post_user_event(user_event)
+    logging.info("Showing reply markup choose country", extra={"context": {"SEVERITY": "info"}})
 
     update.message.reply_text(
         "Выбери страну",
         reply_markup=reply_markup
     )
+
+from collections import ChainMap
+
+def get_params(user_id):
+    query_params = query_params_template.format(user_id=user_id)
+    session = initialize_session()
+
+    results = session.transaction().execute(query_params, commit_tx=True)[0].rows
+
+    # Double loading because of string escaping
+    params = [
+        json.loads(entry.param) for entry in results
+    ]
+    return dict(ChainMap(*params))
 
 
 def format_result(result):
@@ -150,24 +174,32 @@ def format_result(result):
 
 def query_offer(params: dict) -> str:
     country = params["country"]
+    min_nights = params["min_nights"]
+    max_nights = params["max_nights"]
+    num_stars = params["num_stars"]
     if country is None:
         query_country = "1=1"
     else:
         query_country = f"String::Strip(country_name) = '{country}'"
     
-    where_query = query_country
+    query_nights = f" AND num_nights >= {min_nights} AND num_nights <= {max_nights} "
+
+    query_stars = f" AND num_stars >= {num_stars}"
+
+    where_query = query_country + query_nights + query_stars
     query = query_template.format(where_query=where_query)
     session = initialize_session()
     results = session.transaction().execute(query, commit_tx=True)[0].rows
     if len(results) == 0:
-        return "Ничего не найдено"
+        return ["Ничего не найдено"]
     
     return list(map(format_result, results))
-
 
 def button(update: Update, context: CallbackContext) -> None:
     """Parses the CallbackQuery and updates the message text."""
     query = update.callback_query
+
+    logging.info("Fetch callback", extra={"context": {"SEVERITY": "info"}})
 
     # CallbackQueries need to be answered, even if no notification to the user is needed
     # Some clients may have trouble otherwise. See https://core.telegram.org/bots/api#callbackquery
@@ -176,13 +208,23 @@ def button(update: Update, context: CallbackContext) -> None:
     data = json.loads(query.data)
 
     if data["id"] == 1:
-        # Previous selection was selection of country
-        context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text= "Отлично👌🏻\nПодожди, пока я подберу варианты")
-        
         query.edit_message_text(text=countries_dict_tg.get(data["val"]))
 
+        logging.info("Edit msg country", extra={"context": {"SEVERITY": "info"}})
+        # Previous selection was selection of country
+        keyboard_list = []
+        for num_nights in range(5, 9):
+            entry = json.dumps({"val": num_nights, "id": 2})
+            keyboard_list.append(
+                InlineKeyboardButton(str(num_nights), callback_data=entry))
+    
+        reply_markup = InlineKeyboardMarkup([keyboard_list])
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text= "Отлично👌🏻\nТеперь выбери минимальное количество ночей",
+            reply_markup=reply_markup)
+        logging.info("Showing nights options", extra={"context": {"SEVERITY": "info"}})
+        
         params = {
             "country": countries_dict.get(data["val"])
         }
@@ -193,16 +235,113 @@ def button(update: Update, context: CallbackContext) -> None:
             "user": user,
             "event": "select_param",
             "clear": False,
-            "param": json.dumps(json.dumps(params))
+            "param": json.dumps(params)
         }
 
         post_user_event(user_event)
+    
+    if data["id"] == 2:
+        text_mn = f"Минимальное число ночей: {data['val']}"
+        query.edit_message_text(text=text_mn)
+        logging.info("Edit msg nights", extra={"context": {"SEVERITY": "info"}})
+        min_nights = data["val"]
+        keyboard_list = []
+        for num_nights in range(min_nights, 9):
+            entry = json.dumps({"val": num_nights, "id": 3})
+            keyboard_list.append(
+                InlineKeyboardButton(str(num_nights), callback_data=entry))
+        
+        reply_markup = InlineKeyboardMarkup([keyboard_list])
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text= "Теперь выбери максимальное количество ночей",
+            reply_markup=reply_markup)
+        logging.info("Showing max nights options", extra={"context": {"SEVERITY": "info"}})
+        
+        params = {
+            "min_nights": data["val"]
+        }
 
-        texts = query_offer(params)
+        user = update.to_dict()["callback_query"]["from"]
+
+        user_event = {
+            "user": user,
+            "event": "select_param",
+            "clear": False,
+            "param": json.dumps(params)
+        }
+        post_user_event(user_event)
+    
+    if data["id"] == 3:
+        text_mn = f"Максимальное число ночей: {data['val']}"
+        query.edit_message_text(text=text_mn)
+        logging.info("Edit msg min nights", extra={"context": {"SEVERITY": "info"}})
+
+        keyboard_list = []
+        for num_stars in range(0, 6):
+            entry = json.dumps({"val": num_stars, "id": 4})
+            if num_stars == 0:
+                text = "Без звезд"
+            else:
+                text = num_stars * STAR
+            keyboard_list.append(
+                InlineKeyboardButton(text, callback_data=entry))
+            
+        reply_markup = InlineKeyboardMarkup([keyboard_list])
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text= "Теперь минимальное количество звезд отеля",
+            reply_markup=reply_markup)
+        logging.info("Showing star options", extra={"context": {"SEVERITY": "info"}})
+        
+        params = {
+            "max_nights": data["val"]
+        }
+
+        user = update.to_dict()["callback_query"]["from"]
+
+        user_event = {
+            "user": user,
+            "event": "select_param",
+            "clear": False,
+            "param": json.dumps(params)
+        }
+        post_user_event(user_event)
+
+    if data["id"] == 4:
+
+        text_mn = f"Максимальное число звезд: {STAR * data['val']}"
+        query.edit_message_text(text=text_mn)
+        logging.info("Edit msg stars", extra={"context": {"SEVERITY": "info"}})
+
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Отлично👌🏻\nПодожди, пока я подберу варианты")
+        
+        params = {
+            "num_stars": data["val"]
+        }
+
+        user = update.to_dict()["callback_query"]["from"]
+
+        user_event = {
+            "user": user,
+            "event": "select_param",
+            "clear": False,
+            "param": json.dumps(params)
+        }
+        post_user_event(user_event)
+        logging.info("Getting params", extra={"context": {"SEVERITY": "info"}})
+        all_params = get_params(user["id"])
+        logging.info("quering...", extra={"context": {"SEVERITY": "info"}})
+        texts = query_offer(all_params)
+        logging.info("Start displaying", extra={"context": {"SEVERITY": "info"}})
         for text in texts:
             context.bot.send_message(
                 chat_id=update.effective_chat.id,
                 text=text)
+        
+        logging.info("End displaying", extra={"context": {"SEVERITY": "info"}})
 
 
 def handler(event, context):
