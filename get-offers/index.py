@@ -1,6 +1,7 @@
 import ydb
 import os
 import json
+import datetime
 
 import logging
 
@@ -93,6 +94,9 @@ def query_offer(params: dict, user_id: int, offset: int, number: int) -> str:
         min_nights = params["min_nights"]
         max_nights = params["max_nights"]
         num_stars = params["num_stars"]
+        min_date = params["min_departure_date"]
+        max_date = datetime.date.fromisoformat(min_date) + datetime.timedelta(params["interval_days"])
+
         if country is None:
             query_country = "1=1"
         else:
@@ -102,8 +106,11 @@ def query_offer(params: dict, user_id: int, offset: int, number: int) -> str:
 
         query_stars = f" AND num_stars >= {num_stars}"
 
-        where_query = query_country + query_nights + query_stars
+        query_date = f" AND start_date >= cast('{min_date}' as date) AND start_date <= cast('{max_date}' as date)"
+
+        where_query = query_country + query_nights + query_stars + query_date
         query = query_template.format(where_query=where_query, user_id=user_id)
+        logging.info(f"Executing query {query}")
         session.retry_operation_sync(create_execute_query(query))
     else:
         logging.info("Non-zero offset")
