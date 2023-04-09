@@ -1,5 +1,6 @@
 boto3
 six
 python-telegram-bot==13.14
+python-telegram-bot-calendar
 ydb
 requests

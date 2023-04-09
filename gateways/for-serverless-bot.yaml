@@ -17,3 +17,10 @@ paths:
           type: cloud_functions
           function_id: d4emoumsedkeluntk56p
         operationId: add-user-event
+  
+  /get-offers:
+      get:
+        x-yc-apigateway-integration:
+          type: cloud_functions
+          function_id: d4ed92d8niis1pk74jj8
+        operationId: get-offers
