@@ -1,39 +1,42 @@
 import re
-import defaultdict
 
 import pandas as pd
 
-from typing import List
+from typing import List, Any
+from bs4 import BeautifulSoup
+from collections import defaultdict
 from urllib.parse import urlparse, parse_qs
 
 
-from bs4 import BeautifulSoup
-
-
-class ExtractFromHTML:
-    def __init__(self, html):
-        self.html = html
+class HTMLDataExtractor:
+    def __init__(self, raw_html):
+        self.html = raw_html
         self.list_of_html_attrs = ['photos', 'link', 'hotel_name', 'city', 'stars', 'items', 'price',
                                    'internal_hotel_id', 'tutu_rating']
 
-    def extract_from_whole_html(self) -> List[List]:
-        data = defaultdict(list)
-        for k, v in dict.fromkeys(self.list_of_html_attrs).items():
-            data[k] = []
-
+    def extract_all_cards(self) -> List:
         soup = BeautifulSoup(self.html, 'html.parser')
         cards = soup.find_all('div', class_='b-tours__card__hotel_wrapper')
+        return cards
+
+    def extract_raw_data_from_all_cards(self) -> defaultdict[Any, list]:
+        cards = self.extract_all_cards()
+
+        data_dict = defaultdict(list)
+        for k, v in dict.fromkeys(self.list_of_html_attrs).items():
+            data_dict[k] = []
+
         for i, card in enumerate(cards):
             for attr in self.list_of_html_attrs:
-                attr_extractor = getattr(ExtractFromHTML, attr)
+                attr_extractor = getattr(HTMLDataExtractor, attr)
                 try:
-                    data[attr].append(attr_extractor(self, card))
-                except Exception as e:
-                    data[attr].append('None')
-        return data
+                    data_dict[attr].append(attr_extractor(card))
+                except Exception:  # it's parsing, shit happens
+                    data_dict[attr].append('None')
+        return data_dict
 
-    def make_processing(self) -> pd.DataFrame:
-        df = pd.DataFrame(self.extract_from_whole_html())
+    def make_pandas_processing(self) -> pd.DataFrame:  # useless because we decided not to use pandas
+        df = pd.DataFrame(self.extract_raw_data_from_all_cards())
         df['link'] = df['link'].apply(lambda x: f'https://tours.tutu.ru{x}' if x != 'None' else None)
         df['city'] = df['city'].apply(lambda x: re.sub(r'\s+', ' ', x).strip() if x != 'None' else None)
         df['stars'] = df['stars'].apply(lambda x: x[-1] if x != 'None' else None)
@@ -101,6 +104,21 @@ class ExtractFromHTML:
         return tutu_rating
 
 
-html = open('/Users/andrey.golda/Desktop/content.html', "r")
-extractor = ExtractFromHTML(html)
-data = extractor.make_processing()
+# html = open('./content.html', "r")
+# extractor = HTMLDataExtractor(html)
+# data = extractor.make_pandas_processing()
+# print(data)
+
+# import os
+# import ydb
+# import json
+# import uuid
+# import boto3
+# import logging
+# import datetime
+#
+# from hashlib import md5
+# from functools import wraps
+# from bs4 import BeautifulSoup
+# from urllib.parse import urljoin
+# from typing import Optional, Callable, List
