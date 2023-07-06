@@ -14,19 +14,25 @@ from urllib.parse import urlparse, parse_qs
 
 class HTMLDataExtractor:
     def __init__(self, raw_html, meta):
-        self.hotel_amounts = None
-        self.html = raw_html
         self.meta = meta
+        self.html = raw_html
+        self.hotel_amounts = 0
         self.list_of_html_attrs = ['photos', 'link', 'hotel_name', 'city', 'stars', 'items', 'price',
                                    'internal_hotel_id', 'tutu_rating']
 
         self.list_of_extra_attrs = ['nights_min', 'nights_max', 'date_begin', 'date_end']
 
         self.list_of_meta_attrs = ['website', 'airport_distance', 'beach_line', 'bucket', 'country_name',
-                                   'created_dttm_utc', 'is_flight_included', 'key', 'link', 'offer_hash', 'parsing_id',
+                                   'created_dttm_utc', 'is_flight_included', 'key', 'offer_hash', 'parsing_id',
                                    'row_extracted_dttm_utc', 'row_id', 'sand_beach_flg']
 
         self.list_of_all_attrs = self.list_of_html_attrs + self.list_of_extra_attrs + self.list_of_meta_attrs
+
+        self.countries_dict = {197: 'Турция',
+                              145: 'ОАЭ',
+                              188: 'Таиланд',
+                              72: 'Египет',
+                              491: 'Москва'}
 
     def extract_all_cards(self) -> List:
         soup = BeautifulSoup(self.html, 'html.parser')
@@ -57,17 +63,62 @@ class HTMLDataExtractor:
             try:
                 soup_cards_dict[attr] = attr_extractor(soup_cards_dict)
             except Exception:  # it's parsing, shit happens
-                soup_cards_dict[attr] = [None for _ in soup_cards_dict.get(self.list_of_html_attrs[0])]
+                soup_cards_dict[attr] = [None for _ in range(self.hotel_amounts)]
         return soup_cards_dict
 
+
     def extract_meta_data(self, data_dict):
-
-        return
-
-    def extract(self):
-        data_dict = self.extract_raw_data_from_all_cards()
-        data_dict = self.extract_extra_data(data_dict)
+        for attr in self.list_of_meta_attrs:
+            attr_extractor = getattr(HTMLDataExtractor, attr)
+            try:
+                data_dict[attr] = attr_extractor(data_dict)
+            except Exception:  # it's parsing, shit happens
+                data_dict[attr] = [None for _ in range(self.hotel_amounts)]
         return data_dict
+
+
+    def extract(self, data_dict):
+        soup_cards_dict = self.extract_raw_data_from_all_cards()
+        data_dict = self.extract_extra_data(soup_cards_dict)
+        return data_dict
+
+    def website(self, data_dict):
+        single_website = self.meta['website']
+        websites = [single_website for _ in range(self.hotel_amounts)]
+        return websites
+
+    def airport_distance(self, data_dict):
+        airport_distances = [None for _ in range(self.hotel_amounts)]
+        return airport_distances
+
+    def beach_line(self, data_dict):
+        beach_lines = [None for _ in range(self.hotel_amounts)]
+        return beach_lines
+
+    def bucket(self, data_dict):
+        buckets = [None for _ in range(self.hotel_amounts)]
+        return buckets
+
+    def country_name(self, data_dict):
+        single_country_name = self.meta.get('func_args').get('departure_country_id')
+        country_names = [single_country_name for _ in range(self.hotel_amounts)]
+        return country_names
+
+    def created_dttm_utc(self, data_dict):
+        single_created_dttm_utc = dt.datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
+        created_dttms_utc = [single_created_dttm_utc for _ in range(self.hotel_amounts)]
+        return created_dttms_utc
+
+    def is_flight_included(self, data_dict):
+        is_flights_included = [True for _ in range(self.hotel_amounts)]
+        return is_flights_included
+
+    def key(self, data_dict):
+        keys = [None for _ in range(self.hotel_amounts)]
+        return keys
+
+    def offer_hash(self, data_dict):
+        offers_hash = []
 
     @staticmethod
     def nights_min(soup_cards_dict):
