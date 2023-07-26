@@ -30,8 +30,7 @@ def initialize_session():
 
     try:
         driver.wait(fail_fast=True, timeout=5)
-        session = ydb.SessionPool(driver)
-        return session
+        return driver.table_client
     except TimeoutError:
         print("Connect failed to YDB")
         print("Last reported errors by discovery:")
@@ -39,33 +38,20 @@ def initialize_session():
         exit(1)
 
 
-def create_execute_query(query):
-    # Create the transaction and execute query.
-    def _execute_query(session):
-        session.transaction().execute(
-            query,
-            commit_tx=True,
-            settings=ydb.BaseRequestSettings()
-            .with_timeout(3)
-            .with_operation_timeout(2),
-        )
-
-    return _execute_query
-
-
 from functools import wraps
 import datetime
+import time
 from urllib.parse import urljoin
 from hashlib import md5
 import uuid
 
 
-def parse_func_wrapper(website: str, time_fmt: str = "%Y-%m-%dT%H:%M:%SZ") -> Callable:
+def parse_func_wrapper(website: str) -> Callable:
     def dec_outer(fn):
         @wraps(fn)
         def somedec_inner(*args, **kwargs):
             result = fn(*args, **kwargs)
-            result["created_dttm"] = datetime.datetime.now().strftime(time_fmt)
+            result["created_dttm"] = int(time.mktime(datetime.datetime.now().timetuple()))
             result["website"] = website
             result["link"] = urljoin(website, result["href"])
             result["offer_hash"] = md5(result["link"].encode()).hexdigest()
@@ -115,17 +101,7 @@ def load_process_html_cards_from_s3(
         return None
 
 
-BASE_FMT = (
-    ',cast("{created_dttm}" as datetime), "{website}",'
-    '"{link}", "{offer_hash}", "{row_id}", "{parsing_id}",'
-    '"{key}", "{bucket}"'
-)
-
-QUERY_BULK_INSERT = """REPLACE INTO `{table}` (
-    {fields})
-VALUES
-{rows}"""
-
+import posixpath
 
 class RawUtf8Table:
     table_name = "raw/table"
@@ -143,44 +119,29 @@ class RawUtf8Table:
     custom_fields = []
 
     def __init__(
-        self, base_dir: str, session: ydb.SessionPool, max_records: int = 5
+        self, base_dir: str, client: ydb.TableClient, max_records: int = 5
     ) -> None:
-        self.session = session
+        self.client = client
         self.base_dir = base_dir
         self.path = os.path.join(base_dir, self.table_name)
-        self.fields =  self.custom_fields + self.default_fields
-        self.fields_str = ",".join(self.fields)
-        custom_format_string = ",".join(
-            map(lambda x: '"{' + x + '}"', self.custom_fields)
+
+        column_types = ydb.BulkUpsertColumns()
+        for field in self.custom_fields:
+            column_types.add_column(field, ydb.PrimitiveType.Utf8)
+
+        self.column_types = (
+            column_types.add_column("created_dttm", ydb.PrimitiveType.Datetime)
+            .add_column("website", ydb.PrimitiveType.Utf8)
+            .add_column("link", ydb.PrimitiveType.Utf8)
+            .add_column("offer_hash", ydb.PrimitiveType.Utf8)
+            .add_column("row_id", ydb.PrimitiveType.Utf8)
+            .add_column("parsing_id", ydb.PrimitiveType.Utf8)
+            .add_column("key", ydb.PrimitiveType.Utf8)
+            .add_column("bucket", ydb.PrimitiveType.Utf8)
         )
-        self.format_string_row = custom_format_string + BASE_FMT
-        self.max_records = max_records
 
-    def _format_record(self, record: dict):
-        return "(" + self.format_string_row.format(**record) + ")"
-
-    def _create_queries(self, data: List[dict]):
-        queries = []
-        for i in range(len(data) // self.max_records + 1):
-            sub_data = data[i * self.max_records : (i + 1) * self.max_records]
-            if len(sub_data) > 0:
-                rows = data[i * self.max_records : (i + 1) * self.max_records]
-                rows_str = ",".join(map(self._format_record, rows))
-                queries.append(
-                    QUERY_BULK_INSERT.format(
-                        table=self.path, fields=self.fields_str, rows=rows_str
-                    )
-                )
-        return queries
-
-    def bulk_insert(self, data: List[dict]):
-        queries = self._create_queries(data)
-
-        for query in queries:
-            try:
-                self.session.retry_operation_sync(create_execute_query(query))
-            except Exception as e:
-                raise Exception(f"Failed at query {query[:150]}\nwith exception {e}")
+    def bulk_upsert(self, data: List[dict]):
+        self.client.bulk_upsert(self.path, data, self.column_types)
 
 
 # Helpful utility, allows to extract text from html
@@ -393,7 +354,7 @@ def handler(event, context):
     session = initialize_session()
 
     table = RawTeztour("parser", session, max_records=3)
-    table.bulk_insert(data)
+    table.bulk_upsert(data)
 
     return {
         "objects": length,
