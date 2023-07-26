@@ -21,10 +21,10 @@ def get_s3_client():
     return client
 
 
-def initialize_session():
+def initialize_session(database):
     driver = ydb.Driver(
         endpoint=os.getenv("YDB_ENDPOINT"),
-        database=os.getenv("YDB_DATABASE"),
+        database=database,
         credentials=ydb.iam.MetadataUrlCredentials(),
     )
 
@@ -91,56 +91,63 @@ def load_process_html_cards_from_s3(
             result, parsing_id=meta["parsing_id"], key=Key, bucket=Bucket
         )
 
-        # client.delete_object(Bucket=Bucket, Key=Key)
-        # client.delete_object(Bucket=Bucket, Key=object_key)
-        # client.delete_object(Bucket=Bucket, Key=meta_key)
+        client.delete_object(Bucket=Bucket, Key=Key)
+        client.delete_object(Bucket=Bucket, Key=object_key)
+        client.delete_object(Bucket=Bucket, Key=meta_key)
         return result_with_meta
     else:
-        # client.delete_object(Bucket=Bucket, Key=Key)
-        # client.delete_object(Bucket=Bucket, Key=meta_key)
+        client.delete_object(Bucket=Bucket, Key=Key)
+        client.delete_object(Bucket=Bucket, Key=meta_key)
         return None
 
+from dataclasses import dataclass, fields as get_fields
 
-import posixpath
+@dataclass
+class BaseEntry:
+    created_dttm: int
+    website: str
+    link: str
+    offer_hash: str
+    row_id: str
+    parsing_id: str
+    key: str
+    bucket: str
+
+    @classmethod
+    def from_dict(cls, record: dict):
+        return cls(**record)
+
 
 class RawUtf8Table:
+    entry_class = BaseEntry
     table_name = "raw/table"
-    default_fields = [
-        "created_dttm",
-        "website",
-        "link",
-        "offer_hash",
-        "row_id",
-        "parsing_id",
-        "key",
-        "bucket",
-    ]
-
-    custom_fields = []
 
     def __init__(
-        self, base_dir: str, client: ydb.TableClient, max_records: int = 5
+        self, base_dir: str, database: str, client: ydb.TableClient, max_records: int = 5
     ) -> None:
         self.client = client
         self.base_dir = base_dir
-        self.path = os.path.join(base_dir, self.table_name)
+        self.path = os.path.join(database, base_dir, self.table_name)
 
         column_types = ydb.BulkUpsertColumns()
-        for field in self.custom_fields:
-            column_types.add_column(field, ydb.PrimitiveType.Utf8)
 
-        self.column_types = (
-            column_types.add_column("created_dttm", ydb.PrimitiveType.Datetime)
-            .add_column("website", ydb.PrimitiveType.Utf8)
-            .add_column("link", ydb.PrimitiveType.Utf8)
-            .add_column("offer_hash", ydb.PrimitiveType.Utf8)
-            .add_column("row_id", ydb.PrimitiveType.Utf8)
-            .add_column("parsing_id", ydb.PrimitiveType.Utf8)
-            .add_column("key", ydb.PrimitiveType.Utf8)
-            .add_column("bucket", ydb.PrimitiveType.Utf8)
-        )
+        self.fields = [
+            field.name for field in get_fields(self.entry_class)
+        ]
+        for field in self.fields:
+            if field == "created_dttm":
+                field_type = ydb.PrimitiveType.Datetime
+            else:
+                field_type = ydb.PrimitiveType.Utf8
+            
+            if field not in ["created_dttm", "parsing_id", "row_id"]:
+                field_type = ydb.OptionalType(field_type)
+                                    
+            column_types.add_column(field, field_type)
 
-    def bulk_upsert(self, data: List[dict]):
+        self.column_types = column_types
+
+    def bulk_upsert(self, data: List):
         self.client.bulk_upsert(self.path, data, self.column_types)
 
 
@@ -189,7 +196,29 @@ def get_text(
 # ----------------
 # Change from here
 # ----------------
-
+@dataclass
+class Entry(BaseEntry):
+    """Declare fields of your data here"""
+    href: str
+    preview_img: str
+    location_name: str
+    hotel_id: str
+    hotel_rating: str
+    hotel_rating_text: str
+    latitude: str
+    longitude: str
+    title: str
+    hint_text: str
+    amenities_list: str
+    departure_info: str
+    mealplan: str
+    room_type: str
+    currency: str
+    price: str
+    price_box: str
+    price_include: str
+    till_info: str
+    stars_class: str
 
 class RawTeztour(RawUtf8Table):
     """Raw table class
@@ -199,30 +228,8 @@ class RawTeztour(RawUtf8Table):
     all those fields should be string!
 
     """
-
+    entry_class = Entry
     table_name = "raw/teztour"
-    custom_fields = [
-        "href",
-        "preview_img",
-        "location_name",
-        "hotel_id",
-        "hotel_rating",
-        "hotel_rating_text",
-        "latitude",
-        "longitude",
-        "title",
-        "hint_text",
-        "amenities_list",
-        "departure_info",
-        "mealplan",
-        "room_type",
-        "currency",
-        "price",
-        "price_box",
-        "price_include",
-        "till_info",
-        "stars_class",
-    ]
 
 
 def get_cards(soup: BeautifulSoup) -> List[dict]:
@@ -340,6 +347,10 @@ def parse_card(card: BeautifulSoup) -> dict:
 
 
 def handler(event, context):
+
+    database = os.getenv("YDB_DATABASE")
+
+
     s3_client = get_s3_client()
     Bucket = event["messages"][0]["details"]["bucket_id"]
     Key = event["messages"][0]["details"]["object_id"]
@@ -348,12 +359,14 @@ def handler(event, context):
     )
     if data is None:
         return 0
+    
+    data = list(map(Entry.from_dict, data))
 
     length = len(data)
 
-    session = initialize_session()
+    session = initialize_session(database)
 
-    table = RawTeztour("parser", session, max_records=3)
+    table = RawTeztour("parser", database, session, max_records=3)
     table.bulk_upsert(data)
 
     return {
