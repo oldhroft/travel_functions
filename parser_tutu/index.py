@@ -1,9 +1,12 @@
 import os
 import re
 import json
+import time
 import boto3
+import hashlib
 import logging
 
+import pandas as pd
 import datetime as dt
 
 from bs4 import BeautifulSoup
@@ -14,16 +17,17 @@ from urllib.parse import urlparse, parse_qs
 
 class HTMLDataExtractor:
     def __init__(self, raw_html, meta):
+        self.soup_cards_dict = {}
         self.meta = meta
         self.html = raw_html
-        self.hotel_amounts = 0
+        self.hotel_amount = 0
         self.list_of_html_attrs = ['photos', 'link', 'hotel_name', 'city', 'stars', 'items', 'price',
                                    'internal_hotel_id', 'tutu_rating']
 
-        self.list_of_extra_attrs = ['nights_min', 'nights_max', 'date_begin', 'date_end']
+        self.list_of_extra_attrs = ['nights_min', 'nights_max', 'date_begin', 'date_end', 'offer_hash']
 
         self.list_of_meta_attrs = ['website', 'airport_distance', 'beach_line', 'bucket', 'country_name',
-                                   'created_dttm_utc', 'is_flight_included', 'key', 'offer_hash', 'parsing_id',
+                                   'created_dttm_utc', 'is_flight_included', 'key', 'parsing_id',
                                    'row_extracted_dttm_utc', 'row_id', 'sand_beach_flg']
 
         self.list_of_all_attrs = self.list_of_html_attrs + self.list_of_extra_attrs + self.list_of_meta_attrs
@@ -41,116 +45,139 @@ class HTMLDataExtractor:
 
     def extract_raw_data_from_all_cards(self) -> defaultdict[Any, list]:
         cards = self.extract_all_cards()
-        self.hotel_amounts = len(cards)
+        self.hotel_amount = len(cards)
 
-        soup_cards_dict = defaultdict(list)
+        self.soup_cards_dict = defaultdict(list)
         for k, v in dict.fromkeys(self.list_of_html_attrs).items():
-            soup_cards_dict[k] = []
+            self.soup_cards_dict[k] = []
 
         for i, card in enumerate(cards):
             for attr in self.list_of_html_attrs:
                 attr_extractor = getattr(HTMLDataExtractor, attr)
                 try:
-                    soup_cards_dict[attr].append(attr_extractor(card))
+                    self.soup_cards_dict[attr].append(attr_extractor(card))
                 except Exception as e:  # it's parsing, shit happens
-                    soup_cards_dict[attr].append('None')
+                    self.soup_cards_dict[attr].append(None)
 
-        return soup_cards_dict
+        return self.soup_cards_dict
 
-    def extract_extra_data(self, soup_cards_dict):
+    def extract_extra_attrs(self):
         for attr in self.list_of_extra_attrs:
             attr_extractor = getattr(HTMLDataExtractor, attr)
             try:
-                soup_cards_dict[attr] = attr_extractor(soup_cards_dict)
+                self.soup_cards_dict[attr] = attr_extractor(self)
             except Exception:  # it's parsing, shit happens
-                soup_cards_dict[attr] = [None for _ in range(self.hotel_amounts)]
-        return soup_cards_dict
+                self.soup_cards_dict[attr] = [None for _ in range(self.hotel_amount)]
+        return self.soup_cards_dict
 
 
-    def extract_meta_data(self, data_dict):
+    def extract_meta_attrs(self):
         for attr in self.list_of_meta_attrs:
             attr_extractor = getattr(HTMLDataExtractor, attr)
             try:
-                data_dict[attr] = attr_extractor(data_dict)
+                self.soup_cards_dict[attr] = attr_extractor(self)
             except Exception:  # it's parsing, shit happens
-                data_dict[attr] = [None for _ in range(self.hotel_amounts)]
-        return data_dict
+                self.soup_cards_dict[attr] = [None for _ in range(self.hotel_amount)]
+        return self.soup_cards_dict
 
+    def extract(self):
+        self.extract_raw_data_from_all_cards()
+        self.extract_extra_attrs()
+        self.extract_meta_attrs()
+        return self.soup_cards_dict
 
-    def extract(self, data_dict):
-        soup_cards_dict = self.extract_raw_data_from_all_cards()
-        data_dict = self.extract_extra_data(soup_cards_dict)
-        return data_dict
+    # all meta attrs
 
-    def website(self, data_dict):
+    def website(self):
         single_website = self.meta['website']
-        websites = [single_website for _ in range(self.hotel_amounts)]
+        websites = [single_website for _ in range(self.hotel_amount)]
         return websites
 
-    def airport_distance(self, data_dict):
-        airport_distances = [None for _ in range(self.hotel_amounts)]
+    def airport_distance(self):
+        airport_distances = [None for _ in range(self.hotel_amount)]
         return airport_distances
 
-    def beach_line(self, data_dict):
-        beach_lines = [None for _ in range(self.hotel_amounts)]
+    def beach_line(self):
+        beach_lines = [None for _ in range(self.hotel_amount)]
         return beach_lines
 
-    def bucket(self, data_dict):
-        buckets = [None for _ in range(self.hotel_amounts)]
+    def bucket(self):
+        buckets = [None for _ in range(self.hotel_amount)]
         return buckets
 
-    def country_name(self, data_dict):
+    def country_name(self):
         single_country_name = self.meta.get('func_args').get('departure_country_id')
-        country_names = [single_country_name for _ in range(self.hotel_amounts)]
+        country_names = [self.countries_dict.get(single_country_name) for _ in range(self.hotel_amount)]
         return country_names
 
-    def created_dttm_utc(self, data_dict):
+    def created_dttm_utc(self):
         single_created_dttm_utc = dt.datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
-        created_dttms_utc = [single_created_dttm_utc for _ in range(self.hotel_amounts)]
+        created_dttms_utc = [single_created_dttm_utc for _ in range(self.hotel_amount)]
         return created_dttms_utc
 
-    def is_flight_included(self, data_dict):
-        is_flights_included = [True for _ in range(self.hotel_amounts)]
+    def is_flight_included(self):
+        is_flights_included = [True for _ in range(self.hotel_amount)]
         return is_flights_included
 
-    def key(self, data_dict):
-        keys = [None for _ in range(self.hotel_amounts)]
+    def key(self):
+        keys = [None for _ in range(self.hotel_amount)]
         return keys
 
-    def offer_hash(self, data_dict):
-        offers_hash = []
+    def parsing_id(self):
+        parsing_ids = [self.meta.get('parsing_id') for _ in range(self.hotel_amount)]
+        return parsing_ids
 
-    @staticmethod
-    def nights_min(soup_cards_dict):
+    def row_extracted_dttm_utc(self):
+        row_extracted_dttms_utc = [self.meta.get('parsing_ended') for _ in range(self.hotel_amount)]
+        return row_extracted_dttms_utc
+
+    def row_id(self):
+        row_ids = ['?' for _ in range(self.hotel_amount)]
+        return row_ids
+
+    def sand_beach_flg(self):
+        sand_beach_flgs = [None for _ in range(self.hotel_amount)]
+        return sand_beach_flgs
+
+    # all extra attrs
+    def nights_min(self):
         nights_min = [parse_qs(urlparse(link).query).get('nights_min') if link is not None else None
-                      for link in soup_cards_dict.get('link')]
+                      for link in self.soup_cards_dict.get('link')]
         nights_min = [int(nights[0]) if nights is not None else None for nights in nights_min]
         return nights_min
 
-    @staticmethod
-    def nights_max(soup_cards_dict):
+    def nights_max(self):
         nights_max = [parse_qs(urlparse(link).query).get('nights_max') if link is not None else None
-                      for link in soup_cards_dict.get('link')]
+                      for link in self.soup_cards_dict.get('link')]
         nights_max = [int(nights[0]) if nights is not None else None for nights in nights_max]
         return nights_max
 
-    @staticmethod
-    def date_begin(soup_cards_dict):
-        date_begin = [parse_qs(urlparse(link).query)['date_begin'] if link is not None else None
-                      for link in soup_cards_dict.get('link')]
+    def date_begin(self):
 
-        date_begin = [dt.datetime.strptime(date, "%d.%m.%Y").date() if date is not None else None
+        date_begin = [parse_qs(urlparse(link).query).get('date_begin') if link is not None else None
+                      for link in self.soup_cards_dict.get('link')]
+        date_begin = [i[0] if i is not None else None for i in date_begin]
+
+        date_begin = [str(dt.datetime.strptime(date, "%d.%m.%Y").date()) if date is not None else None
                       for date in date_begin]
         return date_begin
 
-    def date_end(self, soup_cards_dict):
-        date_begin = self.date_begin(soup_cards_dict)
-        nights_max = self.nights_max(soup_cards_dict)
-        date_end = [date_begin[i] + dt.timedelta(days=nights_max[i]) if all(
-            [date_begin[i], nights_max[i]]) is not None else None
-                    for i in range(date_begin)]
+    def date_end(self):
+        date_begin = self.soup_cards_dict.get('date_begin')
+        nights_max = self.soup_cards_dict.get('nights_max')
+
+        date_end = [dt.datetime.strptime(date_begin[i], '%Y-%m-%d') + dt.timedelta(days=nights_max[i])
+                    if all([date_begin[i], nights_max[i]]) else None
+                    for i in range(len(date_begin))]
         return date_end
 
+    def offer_hash(self):
+        hotel_id = self.soup_cards_dict.get('internal_hotel_id')
+        to_hash = [f'{i}{time.time_ns()}' for i in hotel_id]
+        to_hash = [hashlib.sha256(i.encode("utf-8")).hexdigest() for i in to_hash]
+        return to_hash
+
+    # all basic html_attrs
     @staticmethod
     def photos(one_card):
         photos = one_card.find('div', class_='b-tours__card__hotel j-tours_card').attrs['data-images']
@@ -159,7 +186,7 @@ class HTMLDataExtractor:
     @staticmethod
     def link(one_card):
         link = one_card.find('a', class_='card_gallery_image j-card_gallery_image j-log_card--hotel-link').attrs['href']
-        link = f'https://tours.tutu.ru{link}' if link != 'None' else None
+        link = f'https://tours.tutu.ru{link}' if link is not None else None
         return link
 
     @staticmethod
@@ -170,13 +197,13 @@ class HTMLDataExtractor:
     @staticmethod
     def city(one_card):
         city = one_card.find('div', class_='hotel_place t-txt-s t-b').text
-        city = re.sub(r'\s+', ' ', city).strip() if city != 'None' else None
+        city = re.sub(r'\s+', ' ', city).strip() if city is not None else None
         return city
 
     @staticmethod
     def stars(one_card):
         stars = one_card.find('div', class_='hotel_rating').get('class')[1]
-        stars = stars[-1] if stars != 'None' else None
+        stars = stars[-1] if stars is not None else None
         return stars
 
     @staticmethod
@@ -188,7 +215,7 @@ class HTMLDataExtractor:
     @staticmethod
     def price(one_card):
         price = one_card.find('span', class_='t-b').text
-        price = int(re.sub(r'\D', '', price).strip()) if price != 'None' else None
+        price = int(re.sub(r'\D', '', price).strip()) if price is not None else None
         return price
 
     @staticmethod
@@ -201,11 +228,10 @@ class HTMLDataExtractor:
     @staticmethod
     def tutu_rating(one_card):
         tutu_rating = one_card.find('div', class_='card_rating_text').text
-        tutu_rating = float(re.sub(r'\D', '', tutu_rating).strip()) / 10 if tutu_rating != 'None' else None
+        tutu_rating = float(re.sub(r'\D', '', tutu_rating).strip()) / 10 if tutu_rating is not None else None
         return tutu_rating
 
 
-import time
 
 start = time.time()
 html = open('./content.html', "r")
