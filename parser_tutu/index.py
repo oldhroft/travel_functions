@@ -232,62 +232,9 @@ class HTMLDataExtractor:
         return tutu_rating
 
 
-
 start = time.time()
 html = open('./content.html', "r")
-meta = open('./meta.json')
-meta = json.load(meta)
-extractor = HTMLDataExtractor(html, meta)
-data = extractor.extract()
+meta = json.load(open('./meta.json'))
+data = HTMLDataExtractor(html, meta).extract()
 print(data)
 print(time.time() - start)
-
-
-# boto_session = boto3.session.Session(
-#     aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
-#     aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"]
-# )
-#
-# s3 = boto_session.client(
-#     service_name='s3',
-#     endpoint_url='https://storage.yandexcloud.net',
-#     region_name='ru-central1'
-# )
-#
-# def load_process_html_cards_from_s3(self,
-#                                     client,
-#                                     Bucket: str,
-#                                     Key: str,
-#                                     get_cards: Callable,
-#                                     parse_card: Callable) -> list:
-#     prefix = "/".join(Key.split("/")[:-1])
-#     object_key = os.path.join(prefix, "content.html")
-#     meta_key = os.path.join(prefix, "meta.json")
-#
-#     meta_object_response = client.get_object(
-#         Bucket=Bucket, Key=meta_key)
-#
-#     meta = json.loads(meta_object_response["Body"].read())
-#
-#     if not meta["failed"]:
-#         logging.info("Start parsing object")
-#         get_object_response = client.get_object(
-#             Bucket=Bucket, Key=object_key)
-#         content = get_object_response["Body"].read()
-#         soup = BeautifulSoup(content, "html.parser")
-#         cards = get_cards(soup)
-#         result = list(map(parse_card, cards))
-#         logging.info("End parsing object")
-#         result_with_meta = update_dicts(
-#             result, parsing_id=meta["parsing_id"], key=Key, bucket=Bucket)
-#
-#         logging.info("Deleting objects")
-#         client.delete_object(Bucket=Bucket, Key=Key)
-#         client.delete_object(Bucket=Bucket, Key=object_key)
-#         client.delete_object(Bucket=Bucket, Key=meta_key)
-#         return result_with_meta
-#     else:
-#         logging.error("Failed flg in meta")
-#         client.delete_object(Bucket=Bucket, Key=Key)
-#         client.delete_object(Bucket=Bucket, Key=meta_key)
-#         return None
