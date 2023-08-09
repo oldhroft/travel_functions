@@ -7,11 +7,14 @@ import logging
 
 logging.getLogger().setLevel(logging.INFO)
 
+
 def initialize_driver():
     driver = ydb.Driver(
-        endpoint=os.getenv('YDB_ENDPOINT'), database=os.getenv('YDB_DATABASE'),
-        credentials=ydb.iam.MetadataUrlCredentials(),)
-    
+        endpoint=os.getenv("YDB_ENDPOINT"),
+        database=os.getenv("YDB_DATABASE"),
+        credentials=ydb.iam.MetadataUrlCredentials(),
+    )
+
     try:
         driver.wait(fail_fast=True, timeout=5)
         return driver
@@ -21,15 +24,20 @@ def initialize_driver():
         print(driver.discovery_debug_details())
         exit(1)
 
+
 def create_execute_query(query):
-  # Create the transaction and execute query.
+    # Create the transaction and execute query.
     def _execute_query(session):
         session.transaction().execute(
             query,
             commit_tx=True,
-            settings=ydb.BaseRequestSettings().with_timeout(3).with_operation_timeout(2)
+            settings=ydb.BaseRequestSettings()
+            .with_timeout(3)
+            .with_operation_timeout(2),
         )
+
     return _execute_query
+
 
 query_clear_template = """DELETE FROM `users/offers`
 WHERE user_id = {user_id}
@@ -70,14 +78,14 @@ SELECT start_date,
 FROM $data
 """
 
-query_get_template = '''SELECT *
+query_get_template = """SELECT *
 FROM `users/offers`
 WHERE user_id = {user_id}
     and offer_number > {offset} and offer_number <= {offset} + {number}
-'''
+"""
+
 
 def query_offer(params: dict, user_id: int, offset: int, number: int) -> str:
-
     driver = initialize_driver()
 
     if offset < 0 and not isinstance(offset, int):
@@ -95,14 +103,18 @@ def query_offer(params: dict, user_id: int, offset: int, number: int) -> str:
         max_nights = params["max_nights"]
         num_stars = params["num_stars"]
         min_date = params["min_departure_date"]
-        max_date = datetime.date.fromisoformat(min_date) + datetime.timedelta(params["interval_days"])
+        max_date = datetime.date.fromisoformat(min_date) + datetime.timedelta(
+            params["interval_days"]
+        )
 
         if country is None:
             query_country = "1=1"
         else:
             query_country = f"String::Strip(country_name) = '{country}'"
-        
-        query_nights = f" AND num_nights >= {min_nights} AND num_nights <= {max_nights} "
+
+        query_nights = (
+            f" AND num_nights >= {min_nights} AND num_nights <= {max_nights} "
+        )
 
         query_stars = f" AND num_stars >= {num_stars}"
 
@@ -115,7 +127,6 @@ def query_offer(params: dict, user_id: int, offset: int, number: int) -> str:
     else:
         logging.info("Non-zero offset")
 
-
     table_session = driver.table_client.session().create()
     logging.info("Extracting data")
     query_get = query_get_template.format(user_id=user_id, offset=offset, number=number)
@@ -123,17 +134,15 @@ def query_offer(params: dict, user_id: int, offset: int, number: int) -> str:
     results = table_session.transaction().execute(query_get, commit_tx=True)[0].rows
     return list(map(dict, results))
 
-def handler(event, context):
 
+def handler(event, context):
     message = json.loads(event["body"])
 
-    from_user =  message["user_id"]
+    from_user = message["user_id"]
     params = message["params"]
     offset = message["offset"]
     number = message["number"]
     logging.info(f"Got params {json.dumps(message)}")
     results = query_offer(params, from_user, offset, number)
 
-    return {
-        'statusCode': 200,
-        'body': json.dumps(results)}
+    return {"statusCode": 200, "body": json.dumps(results)}

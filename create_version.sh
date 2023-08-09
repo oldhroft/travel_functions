@@ -32,9 +32,12 @@ s3api put-object \
 echo "Removing zip file"
 rm -rf "$1.zip"
 
+SUFFIX=$2
+echo "SUFFIX $SUFFIX"
+
 echo "Creating function"
 yc serverless function version create \
-  --function-name=$1 \
+  --function-name=$1$SUFFIX \
   --runtime python39 \
   --entrypoint index.handler \
   --memory 256m \

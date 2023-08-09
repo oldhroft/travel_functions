@@ -149,7 +149,7 @@ class RawUtf8Table:
 
         self.column_types = column_types
 
-    def bulk_upsert(self, data: List):
+    def bulk_upsert(self, data: List[BaseEntry]):
         self.client.bulk_upsert(self.path, data, self.column_types)
 
 
