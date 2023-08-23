@@ -22,11 +22,12 @@ def get_s3_client():
 
 
 def initialize_session(database):
-    driver = ydb.Driver(
-        endpoint=os.getenv("YDB_ENDPOINT"),
-        database=database,
-        credentials=ydb.iam.MetadataUrlCredentials(),
+    driver_config = ydb.DriverConfig(
+        os.environ["YDB_ENDPOINT"],
+        os.environ["YDB_DATABASE"],
+        credentials=ydb.iam.MetadataUrlCredentials()
     )
+    driver = ydb.Driver(driver_config)
 
     try:
         driver.wait(fail_fast=True, timeout=5)
@@ -90,13 +91,13 @@ def load_process_html_cards_from_s3(
             result, parsing_id=meta["parsing_id"], key=Key, bucket=Bucket
         )
 
-        client.delete_object(Bucket=Bucket, Key=Key)
-        client.delete_object(Bucket=Bucket, Key=object_key)
-        client.delete_object(Bucket=Bucket, Key=meta_key)
+        # client.delete_object(Bucket=Bucket, Key=Key)
+        # client.delete_object(Bucket=Bucket, Key=object_key)
+        # client.delete_object(Bucket=Bucket, Key=meta_key)
         return result_with_meta
     else:
-        client.delete_object(Bucket=Bucket, Key=Key)
-        client.delete_object(Bucket=Bucket, Key=meta_key)
+        # client.delete_object(Bucket=Bucket, Key=Key)
+        # client.delete_object(Bucket=Bucket, Key=meta_key)
         return None
 
 
