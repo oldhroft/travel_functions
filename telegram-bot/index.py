@@ -154,7 +154,31 @@ def format_result(result):
     line2 = f'На {int(result["num_nights"])} ночей, с {result["start_date"]} до {result["end_date"]}\n'
     line3 = f'{result["country_name"]}, {result["city_name"]}\n'
     line4 = f'Стоимость {result["price"]} RUB\n'
-    text = line0 + line1 + line2 + line3 + line4 + result["link"]
+
+    if result["mealplan"] != "" and result["mealplan"] is not None:
+        line5 = f'Тип питания {result["mealplan"]} RUB\n'
+    else:
+        line5 = ""
+
+    if result["room_type"] != "" and result["room_type"] is not None:
+        line6 = f'Тип комнаты {result["room_type"]} RUB\n'
+    else:
+        line6 = ""
+
+    price_change = result["price_change"]
+    price = result["price"]
+
+    price_ratio = price - price_change
+    price_ratio = price_change / price
+
+    if price_ratio <= -0.01:
+        ratio_percent = price_ratio * 100
+        line7 =f"🔻Подешевело на {ratio_percent:.1f}%\n"
+    else:
+        line7 = ""
+
+    text = line0 + line1 + line2 + line3 + line4 + line5 + line6 + line7 + result["link"]
+
     return text
 
 def get_offers_handler(data):

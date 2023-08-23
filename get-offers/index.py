@@ -53,7 +53,10 @@ SELECT cast($format(start_date) as utf8) as start_date,
     country_name,
     num_nights,
     city_name,
+    mealplan,
+    room_type,
     price,
+    price_change,
     link,
     num_stars,
     row_id,
@@ -69,7 +72,10 @@ SELECT start_date,
     country_name,
     num_nights,
     city_name,
+    mealplan,
+    room_type,
     price,
+    price_change,
     link,
     num_stars,
     row_id,
@@ -95,7 +101,7 @@ def query_offer(params: dict, user_id: int, offset: int, number: int) -> str:
         logging.info("Zero offset, creating offers for user")
         session = ydb.SessionPool(driver)
         query_clear = query_clear_template.format(user_id=user_id)
-        logging.info(f"Executing query: {query_clear}")
+        logging.info(repr(f"Executing query: {query_clear}"))
         session.retry_operation_sync(create_execute_query(query_clear))
 
         country = params["country_name"]
@@ -122,7 +128,7 @@ def query_offer(params: dict, user_id: int, offset: int, number: int) -> str:
 
         where_query = query_country + query_nights + query_stars + query_date
         query = query_template.format(where_query=where_query, user_id=user_id)
-        logging.info(f"Executing query {query}")
+        logging.info(repr(f"Executing query {query}"))
         session.retry_operation_sync(create_execute_query(query))
     else:
         logging.info("Non-zero offset")
