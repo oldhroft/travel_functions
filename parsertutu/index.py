@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 from dataclasses import dataclass
 from typing import List
 
-from parseteztour.utils import (
+from utils import (
     get_text,
     BaseEntry,
     parse_func_wrapper,
@@ -103,7 +103,3 @@ def handler(event):
         "objects": length,
         "statusCode": 200,
     }
-
-
-if __name__ == '__main__':
-    handler(0)
